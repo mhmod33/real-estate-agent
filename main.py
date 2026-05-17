@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from rag.retriever import _get_collection
 import logging
 
 from agent import run_agent
@@ -34,3 +33,22 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"⚠️  Vector store initialization failed (this is OK if it's empty): {e}")
         # Don't raise - let the app start even if vector store is empty
+
+
+class QuestionRequest(BaseModel):
+    question: str
+
+
+class AnswerResponse(BaseModel):
+    answer: str
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Real Estate AI Agent is running"}
+
+
+@app.post("/ask", response_model=AnswerResponse)
+async def ask(request: QuestionRequest):
+    answer = run_agent(request.question)
+    return AnswerResponse(answer=answer)

@@ -12,7 +12,9 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     from rag.retriever import _get_collection
-_get_collection()
+    from rag.embeddings import init_model
+    init_model()
+    _get_collection()
     
 
 class QuestionRequest(BaseModel):

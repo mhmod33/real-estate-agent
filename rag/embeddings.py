@@ -27,6 +27,12 @@ def get_model() -> SentenceTransformer:
     return _model
 
 
+
+
+def init_model():
+    """Initialize the model at startup."""
+    get_model()
+
 def load_from_json(path: str = JSON_FILE) -> list[dict]:
     """قراءة البيانات من ملف JSON."""
     if not os.path.exists(path):

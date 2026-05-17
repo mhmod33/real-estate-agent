@@ -10,9 +10,8 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    # حمّل الموديل مرة واحدة لما الـ app يبدأ
     from rag.retriever import _get_collection
-    _get_collection()
+_get_collection()
     
 
 class QuestionRequest(BaseModel):

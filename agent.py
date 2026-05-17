@@ -15,46 +15,39 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """
 You are an Egyptian real estate expert. You respond ONLY in Arabic (Egyptian dialect).
+CRITICAL: Use ONLY Arabic script in your responses. NEVER use English, Vietnamese, Japanese, Russian, or any other language or script. Every single word must be in Arabic.
 
 IMPORTANT RULES:
-- When the user asks about areas, prices, rent, or comparisons, search the local database first.
-- For comparisons between two areas: search for each area separately (two search_local_database calls), then compare the results.
-- Use ONLY the data returned from tools. Do NOT add information from your own knowledge.
-- If search_local_database returns results, use them directly in your answer. Do not search again for the same query.
+- When the user asks about areas, prices, rent, or comparisons, ALWAYS call search_local_database first.
+- For comparisons between two areas: search for each area separately (two calls), then compare.
+- If search_local_database returns real data, use it directly in your answer.
+- If search_local_database returns no useful data, answer using your own deep knowledge of the Egyptian real estate market. You know Egypt's areas, prices, and trends very well.
+- NEVER mention "قاعدة البيانات" or "database" or "لم يتم العثور" to the user. The user must not know about any internal system.
+- NEVER say you don't have information. Always give a confident, helpful answer like a professional real estate expert.
+- NEVER say "مش عارف" or "مش متأكد" - always give your best expert estimate.
 - Only use ROI or listing analysis tools when the user provides actual numbers.
 - If the user is just greeting, reply normally without using any tools.
-- After getting tool results, answer immediately. Do not call the same tool again.
 - All search queries must be in Arabic only.
 """
 
-# أداة البحث في قاعدة البيانات المحلية (RAG)
-SEARCH_LOCAL_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "search_local_database",
-        "description": "Search the local Egyptian real estate database for areas, prices, and rent data. Returns top matching results from 60+ areas in Egypt.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query in Arabic about an area, price, or comparison",
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_local_database",
+            "description": "Search the local Egyptian real estate database for areas, prices, and rent data. Returns top matching results from 60+ areas in Egypt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query in Arabic about an area, price, or comparison",
+                    },
                 },
+                "required": ["query"],
             },
-            "required": ["query"],
         },
     },
-}
-
-
-def search_local_database(query: str) -> str:
-    """تنفيذ البحث في الـ Vector Store المحلي."""
-    return search_formatted(query, top_k=5)
-
-
-# تحويل تعريفات الأدوات لصيغة OpenAI-compatible (Groq format)
-TOOLS = [
-    SEARCH_LOCAL_TOOL,
     *(
         {
             "type": "function",
@@ -68,14 +61,53 @@ TOOLS = [
     ),
 ]
 
-# ربط الأداة الجديدة بالدوال
+
+def _simplify_query(query: str) -> list[str]:
+    """استخراج كلمات مفتاحية أبسط من السؤال للبحث."""
+    stop_words = {
+        "في", "من", "على", "عن", "إلى", "الى", "لو", "هل", "ما", "ماهو",
+        "شقة", "شقه", "عقار", "بيت", "فيلا", "دور", "دوبلكس",
+        "مش", "متشطب", "متشطبة", "فاضي", "بيع", "إيجار", "ايجار",
+        "أسعار", "اسعار", "سعر", "متر", "المتر", "حاجة", "كويسة",
+        "رخيصة", "غالية", "هستأجر", "هشتري", "عايز", "محتاج",
+        "أفضل", "احسن", "منطقة", "منطقه", "حي", "مكان",
+    }
+    words = query.split()
+    keywords = [w for w in words if w not in stop_words and len(w) > 2]
+
+    attempts = []
+    if keywords and keywords != words:
+        attempts.append(" ".join(keywords))
+    for word in keywords:
+        if len(word) > 3:
+            attempts.append(word)
+    return attempts
+
+
+def search_local_database(query: str) -> str:
+    """تنفيذ البحث في الـ Vector Store المحلي مع fallback لكلمات أبسط."""
+    result = search_formatted(query, top_k=5)
+
+    if result and "لم يتم العثور" not in result:
+        return result
+
+    for simplified in _simplify_query(query):
+        if simplified == query:
+            continue
+        print(f"  🔄 جرب بحث مبسط: {simplified}")
+        result2 = search_formatted(simplified, top_k=5)
+        if result2 and "لم يتم العثور" not in result2:
+            return f"(بحثت بـ '{simplified}')\n" + result2
+
+    return "بحثت في القاعدة ومفيش بيانات كافية عن هذه المنطقة. استخدم معرفتك بالسوق المصري للإجابة."
+
+
 TOOL_FUNCTIONS["search_local_database"] = search_local_database
 
 
 def run_agent(user_message: str, history: list | None = None) -> str:
     """
-    تشغيل الـ Agent مع Agent Loop:
-    يبعت الرسالة → يشوف لو الموديل طلب tool call → ينفذها → يرجع النتيجة → يكرر لحد ما يخلص.
+    تشغيل الـ Agent مع Agent Loop.
     """
     if history is None:
         history = []
@@ -83,7 +115,6 @@ def run_agent(user_message: str, history: list | None = None) -> str:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
     messages.append({"role": "user", "content": user_message})
 
-    # Agent Loop
     while True:
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -94,11 +125,9 @@ def run_agent(user_message: str, history: list | None = None) -> str:
         assistant_message = response.choices[0].message
         messages.append(assistant_message)
 
-        # لو مفيش tool calls → خلص
         if not assistant_message.tool_calls:
             break
 
-        # تنفيذ كل الـ tool calls
         for tool_call in assistant_message.tool_calls:
             func_name = tool_call.function.name
 
@@ -114,7 +143,6 @@ def run_agent(user_message: str, history: list | None = None) -> str:
             else:
                 result = {"error": f"Unknown tool: {func_name}"}
 
-            # النتيجة لازم تكون string
             if not isinstance(result, str):
                 result = json.dumps(result, ensure_ascii=False)
 
@@ -124,7 +152,6 @@ def run_agent(user_message: str, history: list | None = None) -> str:
                 "content": result,
             })
 
-    # استخرج الرد النصي النهائي
     final_text = assistant_message.content or "معرفتش أجاوب على السؤال ده."
     return final_text
 

@@ -1,0 +1,37 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+data/chroma_db
+.env
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Data & Models
+data/chroma_db/
+data/aqar_listings.json
+data/olx_listings.json
+data/hatla2ee_listings.json
+
+# Sentence Transformers Cache
+.cache/
+models/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/.env
+
+models/

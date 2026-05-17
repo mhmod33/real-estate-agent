@@ -10,7 +10,9 @@ from openpyxl import load_workbook
 from sentence_transformers import SentenceTransformer
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MODEL_PATH = os.path.join(BASE_DIR, "models", "multilingual-minilm")
 JSON_FILE = os.path.join(DATA_DIR, "_progress.json")
 EXCEL_FILE = os.path.join(DATA_DIR, "areas_prices.xlsx")
 
@@ -21,8 +23,15 @@ def get_model() -> SentenceTransformer:
     """تحميل الموديل (مرة واحدة بس)."""
     global _model
     if _model is None:
-        print(f"📦 جاري تحميل موديل: {MODEL_NAME} ...")
-        _model = SentenceTransformer(MODEL_NAME)
+        if os.path.exists(MODEL_PATH):
+            print(f"📦 تحميل الموديل من المسار المحلي: {MODEL_PATH}")
+            _model = SentenceTransformer(MODEL_PATH)
+        else:
+            print(f"📦 جاري تحميل موديل: {MODEL_NAME} ...")
+            _model = SentenceTransformer(MODEL_NAME)
+            os.makedirs(MODEL_PATH, exist_ok=True)
+            _model.save(MODEL_PATH)
+            print(f"✅ تم حفظ الموديل في: {MODEL_PATH}")
         print("✅ تم تحميل الموديل")
     return _model
 

@@ -8,7 +8,7 @@ import json
 import chromadb
 from chromadb.config import Settings
 
-from rag.embeddings import create_embeddings, load_all_records, record_to_text, get_model
+from rag.embeddings import create_embeddings, load_all_records, record_to_text
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 CHROMA_DIR = os.path.join(DATA_DIR, "chroma_db")

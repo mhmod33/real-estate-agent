@@ -4,7 +4,7 @@ Retriever: يبحث عن أقرب مناطق لسؤال المستخدم من Ch
 
 import json
 
-from rag.embeddings import get_model
+from rag.embeddings import get_embedding
 from rag.vector_store import get_client, get_or_create_collection, COLLECTION_NAME
 
 _collection = None
@@ -30,24 +30,20 @@ def search(query: str, top_k: int = 5) -> list[dict]:
     Returns:
         list من dict كل واحد فيه المنطقة والبيانات والـ score.
     """
-    model = get_model()
     collection = _get_collection()
 
     if collection.count() == 0:
         print("⚠️  الـ Vector Store فاضي! شغّل vector_store.py الأول.")
         return []
 
-    # تحويل السؤال لـ embedding
-    query_embedding = model.encode(query).tolist()
+    query_embedding = get_embedding(query)
 
-    # البحث
     results = collection.query(
         query_embeddings=[query_embedding],
         n_results=min(top_k, collection.count()),
         include=["documents", "metadatas", "distances"],
     )
 
-    # تجهيز النتائج
     output = []
     if results and results["ids"] and results["ids"][0]:
         for i, doc_id in enumerate(results["ids"][0]):
@@ -67,13 +63,6 @@ def search(query: str, top_k: int = 5) -> list[dict]:
 def search_formatted(query: str, top_k: int = 5) -> str:
     """
     البحث وإرجاع نتائج منسقة كنص (مناسب لإرساله للـ Agent).
-
-    Args:
-        query: سؤال المستخدم.
-        top_k: عدد النتائج.
-
-    Returns:
-        نص منسق بالنتائج.
     """
     results = search(query, top_k)
 
@@ -96,21 +85,3 @@ def search_formatted(query: str, top_k: int = 5) -> str:
         lines.append("")
 
     return "\n".join(lines)
-
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("  🔍 اختبار البحث في Vector Store")
-    print("=" * 60)
-
-    test_queries = [
-        "أفضل منطقة راقية في القاهرة",
-        "شقة رخيصة في الصعيد",
-        "فيلا في الشيخ زايد أو أكتوبر",
-        "إيجار شقة في الإسكندرية",
-        "أسعار المتر في التجمع الخامس",
-    ]
-
-    for q in test_queries:
-        print(f"\n{'─' * 50}")
-        print(search_formatted(q, top_k=3))

@@ -1,5 +1,5 @@
 """
-تحويل بيانات المناطق العقارية لـ embeddings باستخدام sentence-transformers.
+تحويل بيانات المناطق العقارية لـ embeddings باستخدام Google Generative AI.
 يقرأ من JSON و Excel ويحول كل منطقة لنص واضح ثم يعمل embedding.
 """
 
@@ -7,40 +7,46 @@ import os
 import json
 
 from openpyxl import load_workbook
-from sentence_transformers import SentenceTransformer
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+load_dotenv()
+
+MODEL_NAME = "models/text-embedding-004"
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-MODEL_PATH = os.path.join(BASE_DIR, "models", "multilingual-minilm")
 JSON_FILE = os.path.join(DATA_DIR, "_progress.json")
 EXCEL_FILE = os.path.join(DATA_DIR, "areas_prices.xlsx")
 
-_model = None
+_configured = False
 
 
-def get_model() -> SentenceTransformer:
-    """تحميل الموديل (مرة واحدة بس)."""
-    global _model
-    if _model is None:
-        if os.path.exists(MODEL_PATH):
-            print(f"📦 تحميل الموديل من المسار المحلي: {MODEL_PATH}")
-            _model = SentenceTransformer(MODEL_PATH)
-        else:
-            print(f"📦 جاري تحميل موديل: {MODEL_NAME} ...")
-            _model = SentenceTransformer(MODEL_NAME)
-            os.makedirs(MODEL_PATH, exist_ok=True)
-            _model.save(MODEL_PATH)
-            print(f"✅ تم حفظ الموديل في: {MODEL_PATH}")
-        print("✅ تم تحميل الموديل")
-    return _model
+def _configure():
+    """تهيئة Google Generative AI مرة واحدة بس."""
+    global _configured
+    if not _configured:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not set in environment variables")
+        genai.configure(api_key=api_key)
+        _configured = True
 
 
+def get_embedding(text: str) -> list[float]:
+    """الحصول على embedding لنص واحد."""
+    _configure()
+    result = genai.embed_content(
+        model=MODEL_NAME,
+        content=text
+    )
+    return result["embedding"]
 
 
 def init_model():
-    """Initialize the model at startup."""
-    get_model()
+    """تهيئة الـ embedding API عند بدء التطبيق."""
+    _configure()
+    print("✅ Google Generative AI Embeddings configured")
+
 
 def load_from_json(path: str = JSON_FILE) -> list[dict]:
     """قراءة البيانات من ملف JSON."""
@@ -85,13 +91,13 @@ def load_from_excel(path: str = EXCEL_FILE) -> list[dict]:
 def normalize_record(record: dict) -> dict:
     """توحيد أسماء الحقول بين JSON و Excel."""
     mapping = {
-        "اسم_المنطقة": ["اسم_المنطقة", "اسم_المنطقة"],
+        "اسم_المنطقة": ["اسم_المنطقة"],
         "المحافظة": ["المحافظة"],
         "المدينة": ["المدينة"],
-        "متوسط_سعر_المتر_بيع": ["متوسط_سعر_المتر_بيع", "متوسط_سعر_المتر_بيع"],
-        "متوسط_الإيجار_الشهري": ["متوسط_الإيجار_الشهري", "متوسط_الإيجار_الشهري"],
-        "نوع_العقارات_الغالبة": ["نوع_العقارات_الغالبة", "نوع_العقارات_الغالبة"],
-        "تصنيف_المنطقة": ["تصنيف_المنطقة", "تصنيف_المنطقة"],
+        "متوسط_سعر_المتر_بيع": ["متوسط_سعر_المتر_بيع"],
+        "متوسط_الإيجار_الشهري": ["متوسط_الإيجار_الشهري"],
+        "نوع_العقارات_الغالبة": ["نوع_العقارات_الغالبة"],
+        "تصنيف_المنطقة": ["تصنيف_المنطقة"],
         "ملاحظات": ["ملاحظات"],
     }
 
@@ -144,7 +150,6 @@ def load_all_records() -> list[dict]:
     json_data = load_from_json()
     excel_data = load_from_excel()
 
-    # دمج بدون تكرار (بناءً على اسم المنطقة)
     seen = set()
     all_records = []
 
@@ -171,18 +176,13 @@ def create_embeddings(records: list[dict] | None = None) -> tuple[list[dict], li
 
     texts = [record_to_text(r) for r in records]
 
-    model = get_model()
     print(f"🔄 جاري عمل embeddings لـ {len(texts)} منطقة...")
-    embeddings = model.encode(texts, show_progress_bar=True, convert_to_numpy=True)
+    embeddings = []
+    for i, text in enumerate(texts):
+        emb = get_embedding(text)
+        embeddings.append(emb)
+        if (i + 1) % 10 == 0:
+            print(f"   {i + 1}/{len(texts)} ...")
 
-    print(f"✅ تم إنشاء {len(embeddings)} embedding (بُعد: {embeddings.shape[1]})")
-    return records, texts, embeddings.tolist()
-
-
-if __name__ == "__main__":
-    records, texts, embeddings = create_embeddings()
-    print(f"\n--- عينة ---")
-    for i in range(min(3, len(texts))):
-        print(f"\n📍 {records[i].get('اسم_المنطقة')}:")
-        print(f"   النص: {texts[i][:100]}...")
-        print(f"   Embedding dim: {len(embeddings[i])}")
+    print(f"✅ تم إنشاء {len(embeddings)} embedding")
+    return records, texts, embeddings

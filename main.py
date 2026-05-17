@@ -2,13 +2,18 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from agent import run_agent
-
 app = FastAPI(
     title="Real Estate AI Agent",
     description="مستشار عقاري ذكي متخصص في السوق المصري",
     version="1.0.0",
 )
 
+@app.on_event("startup")
+async def startup_event():
+    # حمّل الموديل مرة واحدة لما الـ app يبدأ
+    from rag.retriever import _get_collection
+    _get_collection()
+    
 
 class QuestionRequest(BaseModel):
     question: str
